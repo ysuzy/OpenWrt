@@ -18,7 +18,8 @@ env:
   OPENWRT_RELEASE: true
   OPENWRT_TAG: ARMv8_PLUS
   TZ: Asia/Shanghai
-
+  # 添加推送相关环境变量（修改部分）
+  PUSH_KEY: ${{ secrets.PUSH_KEY }}  # Server酱
 jobs:
   Build:
     runs-on: ubuntu-22.04
@@ -293,3 +294,18 @@ jobs:
           - ${{ env.COMMIT_DATE }}
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
+          
+    - name: Send Notification
+      if: always()  # 无论成功或失败都会执行
+      run: |
+        if [ "${{ steps.compile.outputs.status }}" == "success" ]; then
+            STATUS="✅ 编译成功！"
+        else
+            STATUS="❌ 编译失败！"
+        fi
+        MESSAGE="📢 OpenWrt 编译结果通知\n\n🔹 项目: ARMv8 Plus OpenWrt\n🔹 分支: ${{ env.REPO_BRANCH }}\n🔹 状态: $STATUS\n🔹 作者: ${{ env.COMMIT_AUTHOR }}\n🔹 提交信息: ${{ env.COMMIT_MESSAGE }}\n🔹 提交时间: ${{ env.COMMIT_DATE }}\n🔹 提交哈希: ${{ env.COMMIT_HASH }}\n\n🔗 [GitHub Actions Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+
+        # Server酱推送
+        if [ -n "${{ env.PUSH_KEY }}" ]; then
+            curl -s -X POST "https://sctapi.ftqq.com/${{ env.PUSH_KEY }}.send" -d "title=OpenWrt 编译通知&desp=$MESSAGE"
+        fi
