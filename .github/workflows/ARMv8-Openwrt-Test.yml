@@ -1,4 +1,4 @@
-name: ARMv8 Plus OpenWrt
+name: ARMv8 Plus OpenWrt test
 
 on:
   workflow_dispatch:
