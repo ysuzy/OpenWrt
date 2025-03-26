@@ -18,7 +18,6 @@ env:
   OPENWRT_RELEASE: true
   OPENWRT_TAG: ARMv8_MINI
   TZ: Asia/Shanghai
-  NOTIFY_API: https://sctapi.ftqq.com
 
 jobs:
   Build:
