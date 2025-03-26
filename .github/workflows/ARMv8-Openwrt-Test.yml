@@ -159,13 +159,11 @@ jobs:
       if: failure()
       run: |
         curl -X POST "${{ env.NOTIFY_API }}/${{ secrets.SERVERCHAN_KEY }}.send" \
-          -d "title=❌ OpenWrt编译失败" \
-          -d "desp=**错误详情**:%0A\
-              ${{ failure() }}%0A%0A\
-              **仓库**: ${{ github.repository }}%0A\
-              **提交信息**: ${{ env.COMMIT_MESSAGE }}%0A\
-              **失败时间**: $(date +'%Y-%m-%d %H:%M:%S')%0A\
-              [查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          -d "title=❌ ${{ env.FAILED_STEP }}失败" \
+          -d "desp=**失败步骤**: ${{ env.FAILED_STEP }}%0A\
+              **提交哈希**: \`${{ env.COMMIT_HASH }}\`%0A\
+              **日志摘要**:%0A\`\`\`%0A${{ env.ERROR_LOG }}%0A\`\`\`%0A\
+              [完整日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
 
     - name: Check Space Usage
       if: (!cancelled())
