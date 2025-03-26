@@ -33,6 +33,12 @@ jobs:
       DEVICE_SUBTARGET: ${{ steps.variable.outputs.DEVICE_SUBTARGET }}
 
     steps:
+    - name: Server start
+       run: |
+         curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
+         -d "title=【编译开始】OpenWrt构建任务启动" \
+         -d "desp=**📦 仓库信息**\n- 源码仓库：[${REPO_URL##*/}]($REPO_URL)\n- 代码分支：$REPO_BRANCH\n\n**⚙️ 设备信息**\n- 目标平台：${{ env.DEVICE_TARGET }}\n- 子平台：${{ env.DEVICE_SUBTARGET }}\n\n**⏱️ 启动时间**\n$(date +'%Y-%m-%d %H:%M:%S')\n\n**🛠️ 触发方式**\n${{ github.event_name }}"
+    
     - name: Checkout
       uses: actions/checkout@main
 
@@ -219,6 +225,26 @@ jobs:
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
 
+    - name: Server Compilation result
+       if: always()
+       run: |
+         if [ "${{ job.status }}" == "success" ]; then
+           STATUS="成功 ✅"
+           DESP="**构建状态**: 成功\n**完成时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**🔗 相关链接**\n- [下载临时固件](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n- [查看完整日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+           if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
+             DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
+           fi
+         else
+           STATUS="失败 ❌"
+           DESP="**构建状态**: 失败\n**失败阶段**: 编译过程\n**失败时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**📝 建议操作**\n1. 检查配置文件是否正确\n2. 查看[编译日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n3. 重新触发构建测试"
+           if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
+             DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
+           fi
+         fi
+         curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
+         -d "title=【编译结果】OpenWrt构建任务${STATUS}" \
+         -d "desp=${DESP}"
+
   Package:
     needs: [Build]
     runs-on: ubuntu-22.04
@@ -308,17 +334,19 @@ jobs:
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
 
-    - name: Notify WeChat - Package Success
-      if: success()
-      run: |
-        curl -X POST "${{ env.NOTIFY_API }}/${{ secrets.SERVERCHAN_KEY }}.send" \
-          -d "title=✅ OpenWrt打包成功" \
-          -d "desp=**版本信息**:%0A\
-              - 核心版本: ${{ env.KERNEL_VERSION_NAME }}%0A\
-              - 编译时间: ${{ env.DATE1 }}%0A%0A\
-              **设备信息**:%0A\
-              - 平台架构: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}%0A%0A\
-              **下载地址**:%0A\
-              [正式版下载](https://github.com/${{ github.repository }}/releases/tag/${{ env.OPENWRT_TAG }})%0A%0A\
-              **更新日志**:%0A\
-              ${{ env.COMMIT_MESSAGE }}"
+    - name: Server Compilation result Finish
+       if: always()
+       run: |
+         if [ "${{ job.status }}" == "success" ]; then
+           STATUS="成功 ✅"
+           DESP="**打包版本**: ${{ env.OPENWRT_TAG }} R${{ env.DATE1 }}\n**内核版本**: ${{ env.KERNEL_VERSION_NAME }}\n\n**📦 下载地址**\n- [正式版固件下载](https://github.com/${{ github.repository }}/releases/tag/${{ env.OPENWRT_TAG }})\n\n**📝 更新日志**\n- ${{ env.COMMIT_MESSAGE }}\n- ${{ env.COMMIT_HASH }}"
+           if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
+             DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
+           fi
+         else
+           STATUS="失败 ❌"
+           DESP="**失败阶段**: 打包过程\n**失败时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**🔍 排查建议**\n1. 检查镜像下载是否完整\n2. 确认打包脚本兼容性\n3. 查看[打包日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+         fi
+         curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
+         -d "title=【打包结果】OpenWrt镜像${STATUS}" \
+         -d "desp=${DESP}"
