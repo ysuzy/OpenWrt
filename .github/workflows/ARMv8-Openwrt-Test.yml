@@ -208,7 +208,7 @@ jobs:
           - ${{ env.COMMIT_DATE }}
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
-		  
+	  
     - name: Notify WeChat - Build Failed
       if: failure()
       run: |
