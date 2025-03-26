@@ -1,4 +1,4 @@
-name: ARMv8 Plus OpenWrt test
+name: ARMv8 Mini OpenWrt
 
 on:
   workflow_dispatch:
@@ -8,15 +8,15 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  CONFIG_FILE: configs/armv8-plus.config
-  DIY_SCRIPT: diy-script.sh
+  CONFIG_FILE: configs/armv8-mini.config
+  DIY_SCRIPT: diy-mini.sh
   CLASH_KERNEL: arm64
   CACHE_TOOLCHAIN: true
   UPLOAD_BIN_DIR: false
   FIRMWARE_RELEASE: true
-  FIRMWARE_TAG: ROOTFS_PLUS
+  FIRMWARE_TAG: ROOTFS_MINI
   OPENWRT_RELEASE: true
-  OPENWRT_TAG: ARMv8_PLUS
+  OPENWRT_TAG: ARMv8_MINI
   TZ: Asia/Shanghai
 
 jobs:
@@ -30,14 +30,21 @@ jobs:
       COMMIT_HASH: ${{ steps.clone.outputs.COMMIT_HASH }}
       DEVICE_TARGET: ${{ steps.variable.outputs.DEVICE_TARGET }}
       DEVICE_SUBTARGET: ${{ steps.variable.outputs.DEVICE_SUBTARGET }}
-      FAILED_PACKAGES: ${{ steps.compile.outputs.FAILED_PACKAGES }}
 
     steps:
-    - name: Server start
+    - name: Notify WeChat - Build Start
       run: |
-        curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
-        -d "title=【编译开始】OpenWrt构建任务启动" \
-        -d "desp=**📦 仓库信息**\n- 源码仓库：[${REPO_URL##*/}]($REPO_URL)\n- 代码分支：$REPO_BRANCH\n\n**⚙️ 设备信息**\n- 目标平台：${{ env.DEVICE_TARGET }}\n- 子平台：${{ env.DEVICE_SUBTARGET }}\n\n**⏱️ 启动时间**\n$(date +'%Y-%m-%d %H:%M:%S')\n\n**🛠️ 触发方式**\n${{ github.event_name }}"
+        curl -X POST "${{ env.NOTIFY_API }}/${{ secrets.SERVERCHAN_KEY }}.send" \
+          -d "title=🚀 OpenWrt编译开始" \
+          -d "desp=**仓库**: ${{ github.repository }}%0A\
+              **分支**: ${{ env.REPO_BRANCH }}%0A\
+              **设备**: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}%0A\
+              **触发方式**: ${{ github.event_name }}%0A\
+              **开始时间**: $(date +'%Y-%m-%d %H:%M:%S')%0A\
+              [查看进度](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+    - name: Checkout
+      uses: actions/checkout@main
 
     - name: Check Server Performance
       run: |
@@ -67,16 +74,6 @@ jobs:
         sudo -E apt-get -y autoremove --purge
         sudo -E apt-get -y clean
         sudo timedatectl set-timezone "$TZ"
-
-    - name: Combine Disks
-      uses: easimon/maximize-build-space@master
-      with:
-        swap-size-mb: 1024
-        temp-reserve-mb: 100
-        root-reserve-mb: 1024
-
-    - name: Checkout
-      uses: actions/checkout@main
 
     - name: Clone Source Code
       id: clone
@@ -152,26 +149,9 @@ jobs:
         cd $OPENWRT_PATH
         mkdir -p files/etc/uci-defaults
         cp $GITHUB_WORKSPACE/scripts/init-settings.sh files/etc/uci-defaults/99-init-settings
-        
-        # 编译并捕获错误日志
-        {
-          make -j$(nproc) -k || \
-          make -j1 -k || \
-          make -j1 V=s -k
-        } 2>&1 | tee build.log
-
-        # 提取失败插件列表
-        FAILED_PACKAGES=$(grep -oE 'ERROR: package/([^/]+)/.* failed' build.log | awk -F'/' '{print $2}' | sort -u | tr '\n' ',' | sed 's/,$//')
-        echo "FAILED_PACKAGES=$FAILED_PACKAGES" >> $GITHUB_ENV
-        echo "FAILED_PACKAGES=$FAILED_PACKAGES" >> $GITHUB_OUTPUT
-        
-        # 判断最终编译状态
-        if ls bin/targets/*/*/*.img.gz 1> /dev/null 2>&1; then
-          echo "status=success" >> $GITHUB_OUTPUT
-        else
-          echo "status=failure" >> $GITHUB_OUTPUT
-        fi
-        
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
@@ -216,8 +196,8 @@ jobs:
         body: |
           **This is Temporary Firmware for Armvirt 64**
           ### 📒 固件信息
-          - 🚀 成品固件点击此处跳转➦[PLUS](https://github.com/haiibo/OpenWrt/releases/tag/ARMv8_PLUS)即可下载
-          - 💻 平台架构: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }} (多功能临时固件)
+          - 🚀 成品固件点击此处跳转➦[MINI](https://github.com/haiibo/OpenWrt/releases/tag/ARMv8_MINI)即可下载
+          - 💻 平台架构: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }} (精简版临时固件)
           - ⚽ 固件源码: ${{ env.REPO_URL }}
           - 💝 源码分支: ${{ env.REPO_BRANCH }}
           - 🌐 默认地址: 192.168.1.1
@@ -228,26 +208,18 @@ jobs:
           - ${{ env.COMMIT_DATE }}
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
-
-    - name: Server Compilation result
-      if: always()
+		  
+    - name: Notify WeChat - Build Failed
+      if: failure()
       run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          STATUS="成功 ✅"
-          DESP="**构建状态**: 成功\n**完成时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**🔗 相关链接**\n- [下载临时固件](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n- [查看完整日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
-            DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
-          fi
-        else
-          STATUS="失败 ❌"
-          DESP="**构建状态**: 失败\n**失败阶段**: 编译过程\n**失败时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**📝 建议操作**\n1. 检查配置文件是否正确\n2. 查看[编译日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n3. 重新触发构建测试"
-          if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
-            DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
-          fi
-        fi
-        curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
-        -d "title=【编译结果】OpenWrt构建任务${STATUS}" \
-        -d "desp=${DESP}"
+        curl -X POST "${{ env.NOTIFY_API }}/${{ secrets.SERVERCHAN_KEY }}.send" \
+          -d "title=❌ OpenWrt编译失败" \
+          -d "desp=**错误详情**:%0A\
+              ${{ failure() }}%0A%0A\
+              **仓库**: ${{ github.repository }}%0A\
+              **提交信息**: ${{ env.COMMIT_MESSAGE }}%0A\
+              **失败时间**: $(date +'%Y-%m-%d %H:%M:%S')%0A\
+              [查看日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
 
   Package:
     needs: [Build]
@@ -260,7 +232,6 @@ jobs:
       COMMIT_HASH: ${{ needs.Build.outputs.COMMIT_HASH }}
       DEVICE_TARGET: ${{ needs.Build.outputs.DEVICE_TARGET }}
       DEVICE_SUBTARGET: ${{ needs.Build.outputs.DEVICE_SUBTARGET }}
-      FAILED_PACKAGES: ${{ needs.Build.outputs.FAILED_PACKAGES }}
 
     steps:
     - name: Checkout
@@ -319,7 +290,7 @@ jobs:
         body: |
           **This is OpenWrt Firmware for Armvirt 64**
           ### 📒 固件信息
-          - 🚀 ARMv8 多功能版，集成插件多适合折腾
+          - 🚀 ARMv8 精简版，主打科学上网适合养老
           - 💻 平台架构: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}
           - ⚽ 固件源码: ${{ env.REPO_URL }}
           - 💝 源码分支: ${{ env.REPO_BRANCH }}
@@ -338,22 +309,18 @@ jobs:
           - ${{ env.COMMIT_DATE }}
           - ${{ env.COMMIT_MESSAGE }}
           - ${{ env.COMMIT_HASH }}
-          ### ⚠️ 编译失败插件
-          ${{ env.FAILED_PACKAGES }}
 
-    - name: Server Compilation result Finish
-      if: always()
+    - name: Notify WeChat - Package Success
+      if: success()
       run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          STATUS="成功 ✅"
-          DESP="**打包版本**: ${{ env.OPENWRT_TAG }} R${{ env.DATE1 }}\n**内核版本**: ${{ env.KERNEL_VERSION_NAME }}\n\n**📦 下载地址**\n- [正式版固件下载](https://github.com/${{ github.repository }}/releases/tag/${{ env.OPENWRT_TAG }})\n\n**📝 更新日志**\n- ${{ env.COMMIT_MESSAGE }}\n- ${{ env.COMMIT_HASH }}"
-          if [ -n "${{ env.FAILED_PACKAGES }}" ]; then
-            DESP+="\n\n**⚠️ 编译失败的插件**\n- ${FAILED_PACKAGES//,/\n- }"
-          fi
-        else
-          STATUS="失败 ❌"
-          DESP="**失败阶段**: 打包过程\n**失败时间**: $(date +'%Y-%m-%d %H:%M:%S')\n\n**🔍 排查建议**\n1. 检查镜像下载是否完整\n2. 确认打包脚本兼容性\n3. 查看[打包日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-        fi
-        curl -X POST "https://sctapi.ftqq.com/${{ secrets.SERVERCHAN_KEY }}.send" \
-        -d "title=【打包结果】OpenWrt镜像${STATUS}" \
-        -d "desp=${DESP}"
+        curl -X POST "${{ env.NOTIFY_API }}/${{ secrets.SERVERCHAN_KEY }}.send" \
+          -d "title=✅ OpenWrt打包成功" \
+          -d "desp=**版本信息**:%0A\
+              - 核心版本: ${{ env.KERNEL_VERSION_NAME }}%0A\
+              - 编译时间: ${{ env.DATE1 }}%0A%0A\
+              **设备信息**:%0A\
+              - 平台架构: ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}%0A%0A\
+              **下载地址**:%0A\
+              [正式版下载](https://github.com/${{ github.repository }}/releases/tag/${{ env.OPENWRT_TAG }})%0A%0A\
+              **更新日志**:%0A\
+              ${{ env.COMMIT_MESSAGE }}"
